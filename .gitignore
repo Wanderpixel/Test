@@ -1,0 +1,11 @@
+## IDE directories
+.idea/
+
+## Linter files
+node_modules/*
+
+## Shopware specific directories
+app/application
+
+## Codeception
+app/tests/vendor/

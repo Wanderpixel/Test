@@ -1,0 +1,56 @@
+#!/bin/sh
+
+ROOT_DIR=$(git rev-parse --show-toplevel)
+
+APP_CONTAINER="$(docker-compose ps -q app)"
+
+if [ "$(docker container inspect -f '{{.State.Running}}' $APP_CONTAINER)" == false ]; then
+  echo "App Container is not running. Run make up"
+  exit 1
+fi
+
+#######################################
+## Functions
+#######################################
+hasFilesChanged() {
+  echo "$(git diff --cached --name-only --diff-filter=ACM | grep \\.$1)"
+}
+
+if [[ $(hasFilesChanged php) ]]; then
+  echo "* Running PHP linting"
+  ECS="$(docker exec -t ${APP_CONTAINER} /app/vendor/bin/ecs check /app/custom/static-plugins 2>&1)"
+  echo "$ECS"
+
+  if [[ "$ECS" =~ "WARNING" ]] || [[ "$ECS" =~ "ERROR" ]]; then
+    echo "[ERROR] Did not pass ECS"
+    echo "Run make fix-ecs to solve issues"
+    exit 1
+  else
+    echo "[SUCCESS] ECS PASSED"
+  fi
+
+  echo "---------------------------------------------------"
+  echo "Running PHPMD Linter"
+  PHPMD="php ${ROOT_DIR}/phpmd.phar ${ROOT_DIR}/app/shopware/custom/static-plugins text ${ROOT_DIR}/phpmd_rules.xml"
+  if ! ${PHPMD}; then
+    echo "[ERROR] Didn't pass PHPMD"
+    exit 1
+  else
+    echo "[SUCCESS] PHPMD linting passed"
+  fi
+
+  echo "---------------------------------------------------"
+  echo "Running PHP Stan Linter"
+  PHPSTAN="$(docker exec -t ${APP_CONTAINER} /app/vendor/bin/phpstan analyse -c phpstan.neon)"
+  if [[ "$PHPSTAN" =~ "WARNING" ]] || [[ "$PHPSTAN" =~ "ERROR" ]]; then
+    echo "[ERROR] Didn't pass PHP Stan"
+    exit 1
+  else
+    echo "[SUCCESS] PHP Stan PASSED"
+  fi
+
+  echo "---------------------------------------------------"
+  echo "* PHP Linting successful"
+fi
+
+exit $?

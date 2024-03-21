@@ -1,0 +1,118 @@
+name: DEPLOY
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency: product_environment
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4' # Set the installed PHP version of the server here
+
+      - name: Install dependencies
+        run: |
+          cd app/shopware
+          composer config github-oauth.github.com ${{ secrets.ACCESS_TOKEN }}
+          composer install --no-interaction --no-suggest --optimize-autoloader
+          composer install -d vendor/shopware/recovery --no-interaction --optimize-autoloader --no-suggest
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      #- name: Build TODO: fix build process
+      #  run: cd app/shopware && ./bin/build-js.sh
+
+      - name: Build deploy directory
+        run: |
+          mkdir ../build
+          cp -r app/shopware/artifacts ../build
+          cp -r app/shopware/bin ../build
+          cp -r app/shopware/config ../build
+          cp -r app/shopware/custom ../build
+          cp -r app/shopware/public ../build
+          cp -r app/shopware/src ../build
+          cp -r app/shopware/vendor ../build
+          cp app/shopware/.env.dist ../build
+          cp app/shopware/composer.json ../build
+          cp app/shopware/composer.lock ../build
+          tar -cvf deploy.tar ../build
+
+      - name: Prepare Deployment DEV
+        if: github.ref == 'refs/heads/develop'
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST_DEV }}
+          username: ${{ secrets.SSH_USER_DEV }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          source: "deploy.tar"
+          target: "~/httpdocs/shopware"
+
+      - name: Finish Deployment DEV
+        if: github.ref == 'refs/heads/develop'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST_DEV }}
+          username: ${{ secrets.SSH_USER_DEV }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          script: |
+            cd ~/httpdocs/shopware
+            tar -xvf deploy.tar
+            rsync -av build/* ~/httpdocs/shopware
+            mkdir -p files
+            mkdir -p custom/plugins
+            mkdir -p custom/apps
+            mkdir -p var/queue
+            mkdir -p var/test
+            touch install.lock
+            rm deploy.tar
+            bin/console database:migrate --all
+            bin/console theme:compile
+            bin/console cache:clear
+
+      - name: Prepare Deployment Main
+        if: github.ref == 'refs/heads/main' # Adjust the branch name if your default branch is e.g. called master
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST_MAIN }}
+          username: ${{ secrets.SSH_USER_MAIN }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          source: "deploy.tar"
+          target: "~/httpdocs/shopware"
+
+      - name: Finish Deployment Main
+        if: github.ref == 'refs/heads/main' # Adjust the branch name if your default is e.g. called master
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST_MAIN }}
+          username: ${{ secrets.SSH_USER_MAIN }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          script: |
+            cd ~/httpdocs/shopware
+            tar -xvf deploy.tar
+            rsync -av build/* ~/httpdocs/shopware
+            mkdir -p files
+            mkdir -p custom/plugins
+            mkdir -p custom/app
+            mkdir -p var/queue
+            mkdir -p var/test
+            touch install.lock
+            rm deploy.tar
+            bin/console database:migrate --all
+            bin/console theme:compile
+            bin/console cache:clear
