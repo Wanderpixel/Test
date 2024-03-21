@@ -3,7 +3,7 @@ MAKEFLAGS += --silent
 ARGS = $(filter-out $@,$(MAKECMDGOALS))
 UNAME=$(shell uname -s)
 
-export COMPOSE_PROJECT_NAME=docker-boilerplate
+export COMPOSE_PROJECT_NAME=my-new-project
 export COMPOSER_CACHE=$$(composer config --no-interaction --global cache-dir || echo $$HOME/.cache/composer)
 export YARN_CACHE=$$(yarn cache dir || echo $$HOME/.cache/yarn)
 export NPM_CACHE=$$(npm config get cache || echo $$HOME/.cache/npm)
